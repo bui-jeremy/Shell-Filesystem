@@ -1,22 +1,12 @@
-CC = gcc
-CFLAGS = -m32 -fno-builtin -fno-stack-protector -fno-strict-aliasing -fno-delete-null-pointer-checks -nostdinc -I. -g -Wall -std=c99
-CPPFLAGS = -Wa,--32 -MMD
-OBJS = boot.o init.o switch.o
-PROGS = memos-2
-MNT_POINT=/mnt/
+obj-m += ramdisk_module.o
 
-all: $(PROGS)
+KERNEL_VERSION := 2.6.33.2
 
-memos-2: $(OBJS)
-	$(LD) -m elf_i386 -T memos.ld -o $@ $^
+build_module: ramdisk_module.c
+	make -C /lib/modules/$(KERNEL_VERSION)/build SUBDIRS=$(PWD) modules
 
-%: %.c
+load: build_module
+	insmod ramdisk_module.ko
 
-install: $(PROGS)
-	cp $(PROGS) $(MNT_POINT)/boot
-	sync
-
-clean:
-	-rm *.o *.d $(PROGS)
-
--include *.d
+unload:
+	rmmod ramdisk_module.ko

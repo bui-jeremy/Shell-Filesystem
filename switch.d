@@ -1,1 +1,0 @@
-switch.o: switch.S
