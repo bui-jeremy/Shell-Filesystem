@@ -142,6 +142,27 @@ static void __exit cleanup_routine(void) {
 module_init(initialization_routine);
 module_exit(cleanup_routine);
 
+
+//this function is to parse the path of the parent directory from the complete file path
+void parse_parent_path(const char *path, char *parent_path) {
+    char *last_slash;
+
+    // Find the last occurrence of '/'
+    last_slash = strrchr(path, '/');
+
+    if (last_slash == NULL) {
+        // If no slash is found, it means the path is a file in the root directory
+        strcpy(parent_path, "/");
+    } else {
+        // Copy everything from the start of the path to the last '/'
+        strncpy(parent_path, path, last_slash - path);
+        // Null-terminate the string
+        parent_path[last_slash - path] = '\0';
+    }
+}
+
+
+
 int rd_create(char *pathname){
     char *parent_path[50];
     char *child;
