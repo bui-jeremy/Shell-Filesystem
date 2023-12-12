@@ -282,6 +282,26 @@ void mark_block_as_used(int block_index) {
     bitmap_pointer->bits[byte_index] |= (1 << bit_offset);
 }
 
+/*
+The implementation of this function assumes that the type field is a character array
+*/
+void initialize_inode(int inode_index, const char *type, int parent_index) {
+    struct index_node *inode;
+
+    // Get the inode at the specified index
+    inode = &inode_pointer[inode_index];
+
+    // Set the inode's type, assuming 'type' field is a character array
+    strncpy(inode->type, type, sizeof(inode->type) - 1);
+    inode->type[sizeof(inode->type) - 1] = '\0'; // Ensure string is null-terminated
+
+    // Initialize other attributes of the inode
+    inode->size = 0; // Set the initial size of the new file or directory to 0
+    memset(inode->locations, 0, sizeof(inode->locations)); // Clear data block locations
+    inode->parent_index = parent_index; // Set the parent directory index
+    inode->block_count = 0; // Initialize block count to 0
+    inode->last_block_offset = 0; // Initialize the last block offset to 0
+}
 
 
 
@@ -332,6 +352,13 @@ int rd_create(char *pathname){
     // 6. Update superblock and bitmap
     super_block_pointer->free_inodes--;
     mark_block_as_used(inode_index);
+
+    // 7. Initialize inode
+    initialize_inode(inode_index, child, "file", parent_inode_index);
+
+    printk(KERN_INFO "File '%s' created successfully.\n", pathname);
+    return 0; // Success
+}
 
 
 
