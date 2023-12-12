@@ -149,11 +149,11 @@ int rd_create(char *pathname){
     // 1. check superblock for information on free blocks
     if (superblock.free_inodes == 0){
         printk(KERN_ERR "No free i-nodes available.\n");
-        return -ENOMEM;
+        return -1;
     }
     if (superblock.free_blocks == 0){
         printk(KERN_ERR "No free blocks available.\n");
-        return -ENOMEM;
+        return -1;
     }
 
     // 2. check to see if parent directory exists, need to recursively check all parent directories
