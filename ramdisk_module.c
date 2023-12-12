@@ -268,6 +268,21 @@ int allocate_inode(void) {
     return -1; // Return an error code
 }
 
+/*
+Mark a specific block in a bitmap as used
+
+P.S :Assume that the bitmap structure has a character array named bits to store the bitmap, 
+and each character (byte) represents the usage of 8 blocks
+*/
+void mark_block_as_used(int block_index) {
+    int byte_index = block_index / 8; // 8 bits for a byte
+    int bit_offset = block_index % 8;
+
+    // Set the corresponding bit to 1 to mark this block as used
+    bitmap_pointer->bits[byte_index] |= (1 << bit_offset);
+}
+
+
 
 
 
