@@ -32,8 +32,23 @@ struct superblock {
     unsigned int free_inodes;
 };
 
+struct operations{
+	char* filename;
+	char *pathname;
+	int fid;
+	int offset;
+	char* input_content;
+	int input_size;
+}
+
 void *ramdisk_memory;
 struct proc_dir_entry *proc_entry;
+
+operations ramdisk;
+superblock *super_block_pointer;
+index_node *inode_pointer;
+bitmap *bitmap_pointer;
+void *space_pointer;
 
 // Function to initialize the filesystem
 int initialize_filesystem(void) {
@@ -45,10 +60,10 @@ int initialize_filesystem(void) {
         return -ENOMEM;
     }
 
-    struct superblock *super_block_pointer = (struct superblock *)ramdisk_memory;
-    struct index_node *inode_pointer = (struct index_node *)((char *)ramdisk_memory + BLOCK_SIZE);
-    struct bitmap *bitmap_pointer = (struct bitmap *)((char *)inode_pointer + BLOCK_SIZE * 4);  // Assuming 4 inode blocks
-    void *space_pointer = (void *)((char *)bitmap_pointer + BLOCK_SIZE);  // Space for actual file data
+    super_block_pointer = (struct superblock *)ramdisk_memory;
+    inode_pointer = (struct index_node *)((char *)ramdisk_memory + BLOCK_SIZE);
+    bitmap_pointer = (struct bitmap *)((char *)inode_pointer + BLOCK_SIZE * 256);
+    space_pointer = (void *)((char *)bitmap_pointer + BLOCK_SIZE * 4);  // Space for actual file data
 
     memset(ramdisk_memory, 0, RAMDISK_SIZE);
 
@@ -67,7 +82,32 @@ int initialize_filesystem(void) {
     inode_pointer->block_count = 0;
     inode_pointer->last_block_offset = 0;
 
+    printk(KERN_INFO "RAM Disk initialized!\n");
     return 0; 
+}
+
+int ramdisk_ioctl (struct inode *inode, struct file *file, unsigned int cmd, unsigned long arg){
+    char path[256];
+    char *path_pointer;
+    int ret = -1;
+    int* fd;
+    operations *user_input_content;
+
+    switch(cmd){
+        case IOCTL_CREAT:
+            printk(KERN_INFO "Creating file through ioctl.\n");
+            user_input_content = (operations *)vmalloc(sizeof(operations));
+            copy_from_user(user_input_content, (operations *)arg, sizeof(operations));
+            ret = rd_create(user_input_content->pathname);
+            vfree(user_input_content);
+        case IOCTL_MKDIR:
+            printk(KERN_INFO "Creating directory through ioctl.\n");
+            user_input_content = (operations *)vmalloc(sizeof(operations));
+            copy_from_user(user_input_content, (operations *)arg, sizeof(operations));
+            ret = rd_mkdir(user_input_content->pathname);
+            vfree(user_input_content);
+    }
+    return ret;
 }
 
 static int __init initialization_routine(void) {
@@ -77,13 +117,14 @@ static int __init initialization_routine(void) {
         return init_fs_result;
     }
 
-    proc_entry = proc_create("ramdisk", 0666, NULL, NULL);
+    ramdisk.ioctl = ramdisk_ioctl;
+    proc_entry = proc_create_entry("ramdisk", 0666, NULL, NULL);
     if (!proc_entry) {
         printk(KERN_ERR "Error creating proc entry.\n");
         vfree(ramdisk_memory);
         return -ENOMEM;
     }
-
+    proc_entry->proc_fops = &ramdisk;
     printk(KERN_INFO "Proc entry created.\n");
     return 0;
 }
@@ -100,3 +141,49 @@ static void __exit cleanup_routine(void) {
 
 module_init(initialization_routine);
 module_exit(cleanup_routine);
+
+int rd_create(char *pathname){
+    char *parent_path[50];
+    char *child;
+
+    // 1. check superblock for information on free blocks
+    if (superblock.free_inodes == 0){
+        printk(KERN_ERR "No free i-nodes available.\n");
+        return -ENOMEM;
+    }
+    if (superblock.free_blocks == 0){
+        printk(KERN_ERR "No free blocks available.\n");
+        return -ENOMEM;
+    }
+
+    // 2. check to see if parent directory exists, need to recursively check all parent directories
+
+
+    // 3. extract file name with string parsing 
+
+    // 4. check if file already exists 
+
+    // 5. declare FDT to the file
+
+}
+
+int rd_mkdir(char *pathname){
+     // 1. check superblock for information on free blocks
+    if (superblock.free_inodes == 0){
+        printk(KERN_ERR "No free i-nodes available.\n");
+        return -ENOMEM;
+    }
+    if (superblock.free_blocks == 0){
+        printk(KERN_ERR "No free blocks available.\n");
+        return -ENOMEM;
+    }
+
+    // 2. check to see if parent directory exists, need to recursively check all parent directories
+    
+    // 3. extract file name with string parsing 
+
+    // 4. check if file already exists 
+
+    // 5. declare FDT to the file
+}
+
