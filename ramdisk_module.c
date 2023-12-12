@@ -161,6 +161,30 @@ void parse_parent_path(const char *path, char *parent_path) {
     }
 }
 
+//this function is to find the last occurrence of a character in a string
+char *my_strrchr(const char *str, int c) {
+    const char *last_occurrence = NULL;
+
+    //Traverse the string until the end of string is encountered
+    while (*str) {
+        if (*str == c) {
+            // If a matching character is found, update last_occurrence
+            last_occurrence = str;
+        }
+        str++;
+    }
+
+    // Check if the last character is the character we are looking for (if c is '\0')
+    if (c == '\0') {
+        last_occurrence = str;
+    }
+
+    return (char *)last_occurrence;
+}
+
+
+
+
 
 
 int rd_create(char *pathname){
