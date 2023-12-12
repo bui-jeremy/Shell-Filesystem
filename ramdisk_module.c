@@ -162,7 +162,7 @@ void parse_parent_path(const char *path, char *parent_path) {
 }
 
 //this function is to find the last occurrence of a character in a string
-char *my_strrchr(const char *str, int c) {
+char strrchr(const char *str, int c) {
     const char *last_occurrence = NULL;
 
     //Traverse the string until the end of string is encountered
