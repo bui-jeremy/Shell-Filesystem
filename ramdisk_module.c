@@ -4,6 +4,7 @@
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <asm/uaccess.h>
+#include <string.h>
 
 MODULE_LICENSE("GPL");
 
@@ -161,28 +162,33 @@ void parse_parent_path(const char *path, char *parent_path) {
     }
 }
 
-//this function is to find the last occurrence of a character in a string
-char strrchr(const char *str, int c) {
-    const char *last_occurrence = NULL;
 
-    //Traverse the string until the end of string is encountered
-    while (*str) {
-        if (*str == c) {
-            // If a matching character is found, update last_occurrence
-            last_occurrence = str;
+/*
+Assuming that each index_node structure has a path associated with it 
+(this detail has not been specified now, so just assume a simple implementation), 
+we can iterate through all inodes to find matching paths. Here is the basic implementation of the function:
+*/
+int find_inode_index_by_path(const char *pathname) {
+    struct index_node *current_inode;
+    int i;
+
+    // Iterate through all possible inodes
+    for (i = 0; i < MAX_INODES; i++) {
+        current_inode = &inode_pointer[i];
+
+        // Check if the current inode is valid
+        if (current_inode->type[0] != '\0') {
+            // Compare the path of the inode with the provided pathname
+            if (strcmp(current_inode->path, pathname) == 0) {
+                // Matching inode found, return its index
+                return i;
+            }
         }
-        str++;
     }
 
-    // Check if the last character is the character we are looking for (if c is '\0')
-    if (c == '\0') {
-        last_occurrence = str;
-    }
-
-    return (char *)last_occurrence;
+    // No matching path found
+    return -1;
 }
-
-
 
 
 
@@ -202,6 +208,13 @@ int rd_create(char *pathname){
     }
 
     // 2. check to see if parent directory exists, need to recursively check all parent directories
+    // Parse parent directory from pathname
+    parse_parent_path(pathname, parent_path);
+    parent_inode_index = find_inode_index_by_path(parent_path);
+    if (parent_inode_index < 0) {
+        printk(KERN_ERR "Parent directory does not exist.\n");
+        return -1;
+    }
 
 
     // 3. extract file name with string parsing 
