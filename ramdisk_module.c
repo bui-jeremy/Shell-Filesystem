@@ -12,26 +12,9 @@ MODULE_LICENSE("GPL");
 #define INODE_SIZE 64
 #define MAX_FILE_SIZE 1067008  // Maximum file size based on block pointers
 
-#define RAMDISK_SIZE (4 * 1024 * 1024)  // Adjust RAMDISK_SIZE as needed
-
-struct index_node {
-    char type[4]; // assuming a maximum of 3 characters for type
-    size_t size;
-    void *locations[10]; // First 8 blocks are direct, 9th is single indirect, 10th is double indirect
-    int parent_index;
-    unsigned int block_count;
-    unsigned int last_block_offset;
-};
-
-struct bitmap {
-    char bits[BLOCK_SIZE]; // 1 bit per block
-};
-
-// superblock is the first block of the RAM disk
-struct superblock {
-    unsigned int free_blocks;
-    unsigned int free_inodes;
-};
+#define RAMDISK_SIZE (2 * 1024 * 1024)  // 2 MB
+#define DATA_BLOCK_SIZE ((RAMDISK_SIZE/256) - 1 - 256 - 4) // 3835 blocks: blocks in 2 MB - superblock - inodes - bitmap
+#define MAX_INODES 1024  // Maximum number of inodes 256 blocks * 256 bytes / 64 bytes per inode
 
 struct operations{
 	char* filename;
@@ -42,50 +25,82 @@ struct operations{
 	int input_size;
 }
 
-void *ramdisk_memory;
-struct proc_dir_entry *proc_entry;
+// superblock is the first block of the RAM disk (256 byttes)
+struct superblock {
+    unsigned int free_blocks = ;
+    unsigned int free_inodes;
+    char remaining[248]; // Remaining space in the block
+};
 
-operations ramdisk;
-superblock *super_block_pointer;
-index_node *inode_pointer;
-bitmap *bitmap_pointer;
-void *space_pointer;
+// index node for each file
+struct index_node {
+    char type[4]; // assuming a maximum of 3 characters for type
+    size_t size;
+    void *locations[10]; // First 8 blocks are direct, 9th is single indirect, 10th is double indirect
+    int dir_entries_count;
+    char remaining[6]; 
+};
+
+// bitmap to keep track of free blocks 0 = free, 1 = used
+struct bitmap {
+    char bits[BLOCK_SIZE]; // 1 bit per block
+};
+
+// directory entry for each file
+struct dir_entry{
+    char name[14];
+    int inode_index; // 2 bytes
+};
+
+// data block storage
+typedef union data_block data_block_struct;
+union data_block{
+    char data[BLOCK_SIZE];
+    struct dir_entry dir_entries[16];
+    data_block_struct index_block[BLOCK_SIZE/4];
+};
+
+// ramdisk data structure
+struct ramdisk_struct{
+    // 1 block for superblock
+    struct superblock superblock_data;
+    // 256 blocks for inodes
+    struct index_node index_node_data[MAX_INODES];
+    // 4 blocks for bitmap
+    struct bitmap bitmap_data[4];
+    // 4096 - 1 - 256 - 4 = 3835 blocks for data
+    data_block_struct data_block_data[DATA_BLOCK_SIZE];
+}
+
+struct ramdisk_struct *ramdisk;
+struct proc_dir_entry *proc_entry;
 
 // Function to initialize the filesystem
 int initialize_filesystem(void) {
     printk("Initializing RAM Disk!\n");
 
-    ramdisk_memory = (void *)vmalloc(RAMDISK_SIZE);
+    ramdisk= (ramdisk_struct*)vmalloc(RAMDISK_SIZE);
     if (!ramdisk_memory) {
         printk(KERN_ERR "Failed to allocate memory for ramdisk.\n");
         return -ENOMEM;
     }
 
-    super_block_pointer = (struct superblock *)ramdisk_memory;
-    inode_pointer = (struct index_node *)((char *)ramdisk_memory + BLOCK_SIZE);
-    bitmap_pointer = (struct bitmap *)((char *)inode_pointer + BLOCK_SIZE * 256);
-    space_pointer = (void *)((char *)bitmap_pointer + BLOCK_SIZE * 4);  // Space for actual file data
+    // superblock initialization
+    ramdisk->superblock_data.free_blocks = DATA_BLOCK_SIZE;
+    ramdisk->superblock_data.free_inodes = MAX_INODES;
 
-    memset(ramdisk_memory, 0, RAMDISK_SIZE);
+    // IMPLEMENT ME - need to initialize process file table 
 
-    // Initialize superblock
-    super_block_pointer->free_blocks = (RAMDISK_SIZE / BLOCK_SIZE) - 1 - (4 + 1);  // Adjust for superblock and bitmap blocks
-    super_block_pointer->free_inodes = 1024;  // Initial number of free inodes
-
-    // Initialize bitmap
-    bitmap_pointer->bits[0] |= 0x80;  // Mark first bit as used (assuming little-endian)
-
-    // Initialize root directory inode
-    strcpy(inode_pointer->type, "dir");
-    inode_pointer->size = 0;
-    inode_pointer->locations[0] = space_pointer;
-    inode_pointer->parent_index = -1;  // Root directory has no parent
-    inode_pointer->block_count = 0;
-    inode_pointer->last_block_offset = 0;
-
-    printk(KERN_INFO "RAM Disk initialized!\n");
-    return 0; 
+    int result = rd_mkdir("/"); // Create the root directory
+    if (result != 0) {
+        printk(KERN_INFO "RAM Disk initialized!\n");
+    }
+    else{
+        printk(KERN_ERR "Failed to initialize RAM Disk.\n");
+    }
+    return result;
 }
+
 
 int ramdisk_ioctl (struct inode *inode, struct file *file, unsigned int cmd, unsigned long arg){
     char path[256];
@@ -190,23 +205,25 @@ int find_inode_index_by_path(const char *pathname) {
     return -1;
 }
 
-//Extract filename from given full path
-char *extract_file_name(const char *pathname) {
-    char *last_slash;
-
-    // Find the last occurrence of '/' in the path
-    last_slash = strrchr(pathname, '/');
-
-    if (last_slash == NULL) {
-        // No slash found, the entire path is the file name
-        return strdup(pathname);
-    } else if (*(last_slash + 1) == '\0') {
-        // The path ends with '/', indicating it's a directory, not a file
-        return NULL;
-    } else {
-        // Return the substring after the last '/'
-        return strdup(last_slash + 1);
+//Parse the directory and filename separately
+void extract_directory_and_filename(const char* input_path, char* output_directory, char* output_filename) {
+    int index;
+    int length = strlen(input_path);
+    
+    for (index = length - 1; index >= 0; index--) {
+        // directory is subdirectory (from root)
+        if (input_path[index] == '/' && index != 0) {
+            strncpy(output_directory, input_path, index);
+            output_directory[index] = '\0'; 
+            break;
+        }
+        // the directory is the root
+        if (input_path[index] == '/' && index == 0) {
+            strcpy(output_directory, "/\0");
+            break;
+        }
     }
+    strcpy(output_filename, &input_path[index + 1]);
 }
 
 /*
@@ -305,11 +322,12 @@ void initialize_inode(int inode_index, const char *type, int parent_index) {
 
 
 
+// full pathname, type: reg (file) or dir (directory)
+int rd_create(char *pathname, char* type){
+    printk(KERN_INFO "Creating through rd_create... \n");
 
-int rd_create(char *pathname){
-    char *parent_path[50];
-    char *child;
-
+    char *my_parent = (char *)vmalloc(strlen(pathname));
+    char *my_child = (char *)vmalloc(strlen(pathname));
     // 1. check superblock for information on free blocks
     if (superblock.free_inodes == 0){
         printk(KERN_ERR "No free i-nodes available.\n");
@@ -320,24 +338,20 @@ int rd_create(char *pathname){
         return -1;
     }
 
-    // 2. check to see if parent directory exists, need to recursively check all parent directories
-    // Parse parent directory from pathname
-    parse_parent_path(pathname, parent_path);
-    parent_inode_index = find_inode_index_by_path(parent_path);
+    // 2. parse parent directory and filename
+    memset(my_parent, 0, strlen(pathname));
+    memset(my_child, 0, strlen(my_child));
+    extract_directory_and_filename(pathname, my_parent, my_child);
+
+    // 3. check to see if parent directory exists, need to recursively check all parent directories
+    parent_inode_index = find_inode_index_by_path(my_parent);
     if (parent_inode_index < 0) {
         printk(KERN_ERR "Parent directory does not exist.\n");
         return -1;
     }
-
-    // 3. extract file name with string parsing (Extract file name from pathname)
-    child = extract_file_name(pathname);
-    if (child == NULL) {
-        printk(KERN_ERR "Invalid file name.\n");
-        return -1;
-    }
-
+   
     // 4. check if file already exists 
-    if (file_exists_in_directory(parent_inode_index, child)) {
+    if (file_exists_in_directory(parent_inode_index, my_child)) {
         printk(KERN_ERR "File already exists.\n");
         return -1;
     }
@@ -354,36 +368,44 @@ int rd_create(char *pathname){
     mark_block_as_used(inode_index);
 
     // 7. Initialize inode
-    initialize_inode(inode_index, child, "file", parent_inode_index);
+    initialize_inode(inode_index, my_child, type, parent_inode_index);
+
+    // 8. create file object
+    dir_struct *new_entry = free_entry(inode_index);
+    if (new_entry == NULL) {
+        printk(KERN_ERR "Failed to allocate directory entry.\n");
+        return -1;
+    }
+    strcpy(new_entry->name, my_child);
+    new_entry->inode_index = inode_index;
+    inode_pointer[parent_inode_index]->offset += 16;
+
+    // 9. free used pointers
+    vfree(my_parent);
+    vfree(my_child);
 
     printk(KERN_INFO "File '%s' created successfully.\n", pathname);
+
     return 0; // Success
 }
 
-
-
-
-    // 5. declare FDT to the file
-
-}
-
+// mkdir uses rd_create to create a directory as only diff is type input
 int rd_mkdir(char *pathname){
-     // 1. check superblock for information on free blocks
-    if (superblock.free_inodes == 0){
-        printk(KERN_ERR "No free i-nodes available.\n");
-        return -ENOMEM;
+    // special case to declare root 
+    if (strcmp(pathname, "/") == 0 && superblock->free_inodes == MAX_INODES) {
+        printk(KERN_INFO "Initializing root directory");
+        superblock->free_inodes--;
+        strcpy(inode_pointer[0].type, "dir");
+        return 0;
     }
-    if (superblock.free_blocks == 0){
-        printk(KERN_ERR "No free blocks available.\n");
-        return -ENOMEM;
+    // normal directory
+    else {
+        int result = rd_create(pathname, "dir");
+        if (result == 0) {
+            printk(KERN_INFO "Directory '%s' created successfully.\n", pathname);
+        }
+        return result;
     }
-
-    // 2. check to see if parent directory exists, need to recursively check all parent directories
-    
-    // 3. extract file name with string parsing 
-
-    // 4. check if file already exists 
-
-    // 5. declare FDT to the file
+    return -1;
 }
 
