@@ -27,7 +27,7 @@ struct operations{
 
 // superblock is the first block of the RAM disk (256 byttes)
 struct superblock {
-    unsigned int free_blocks = ;
+    unsigned int free_blocks;
     unsigned int free_inodes;
     char remaining[248]; // Remaining space in the block
 };
@@ -36,7 +36,7 @@ struct superblock {
 struct index_node {
     char type[4]; // assuming a maximum of 3 characters for type
     size_t size;
-    void *locations[10]; // First 8 blocks are direct, 9th is single indirect, 10th is double indirect
+    void *location[10]; // First 8 blocks are direct, 9th is single indirect, 10th is double indirect
     int dir_entries_count;
     char remaining[6]; 
 };
@@ -205,7 +205,7 @@ int find_inode_index_by_path(const char *pathname) {
     return -1;
 }
 
-//Parse the directory and filename separately
+//Parse the directory and filename separately //
 void extract_directory_and_filename(const char* input_path, char* output_directory, char* output_filename) {
     int index;
     int length = strlen(input_path);
@@ -328,6 +328,9 @@ int rd_create(char *pathname, char* type){
 
     char *my_parent = (char *)vmalloc(strlen(pathname));
     char *my_child = (char *)vmalloc(strlen(pathname));
+    struct index_node *parent_inode_index = NULL;
+    struct index_node *inode_index = NULL;
+    struct dir_entry new_entry;
     // 1. check superblock for information on free blocks
     if (superblock.free_inodes == 0){
         printk(KERN_ERR "No free i-nodes available.\n");
@@ -341,6 +344,7 @@ int rd_create(char *pathname, char* type){
     // 2. parse parent directory and filename
     memset(my_parent, 0, strlen(pathname));
     memset(my_child, 0, strlen(my_child));
+    // /root/bostonuniversity/CS552/ramdisk.c: parent = /root/bostonuniversity/CS552, child = ramdisk.c
     extract_directory_and_filename(pathname, my_parent, my_child);
 
     // 3. check to see if parent directory exists, need to recursively check all parent directories
@@ -356,21 +360,22 @@ int rd_create(char *pathname, char* type){
         return -1;
     }
 
-    // 5. Allocate an inode for the new file
+    // 5. IMPLEMENT ME - find free inode index by looping through i node array
     inode_index = allocate_inode();
     if (inode_index < 0) {
         printk(KERN_ERR "Failed to allocate inode.\n");
         return -1;
     }
 
-    // 6. Update superblock and bitmap
-    super_block_pointer->free_inodes--;
-    mark_block_as_used(inode_index);
-
-    // 7. Initialize inode
+    // 6. Initialize inode with child content 
     initialize_inode(inode_index, my_child, type, parent_inode_index);
 
-    // 8. create file object
+    // 7. Update superblock and bitmap
+    super_block_pointer->free_inodes--;
+    // UNDERSTAND or replace
+    mark_block_as_used(inode_index);
+
+    // 8. create file object (understand)
     dir_struct *new_entry = free_entry(inode_index);
     if (new_entry == NULL) {
         printk(KERN_ERR "Failed to allocate directory entry.\n");
@@ -380,7 +385,9 @@ int rd_create(char *pathname, char* type){
     new_entry->inode_index = inode_index;
     inode_pointer[parent_inode_index]->offset += 16;
 
-    // 9. free used pointers
+    // 9. IMPLEMENT ME - update parent directory to include child inode
+    
+    // 10. free used pointers
     vfree(my_parent);
     vfree(my_child);
 
