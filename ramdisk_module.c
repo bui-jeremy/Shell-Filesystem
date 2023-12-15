@@ -575,6 +575,30 @@ int rd_open(char *pathname) {
     return new_fd->fd;
 }
 
+//close current file
+int rd_close(int fd) {
+    printk(KERN_INFO "Closing file with FD %d...\n", fd);
+
+    file_descriptor_t *fd_to_remove;
+
+    // 1. Find file descriptor
+    fd_to_remove = find_file_descriptor(fd);
+    if (fd_to_remove == NULL) {
+        printk(KERN_ERR "Invalid file descriptor.\n");
+        return -1;  // Invalid file descriptor
+    }
+
+    // 2. Remove from file descriptor table
+    remove_file_descriptor_from_list(fd_to_remove);
+
+    // 3. Release the memory occupied by the file descriptor structure
+    vfree(fd_to_remove);
+
+    printk(KERN_INFO "File with FD %d closed successfully.\n", fd);
+    return 0; //close seccessfully
+}
+
+
 
 
 
