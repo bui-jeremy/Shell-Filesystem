@@ -77,6 +77,116 @@ struct ramdisk_struct{
 struct ramdisk_struct *ramdisk;
 struct proc_dir_entry *proc_entry;
 
+/*
+From here, are steps to implemente FDT by using linked list
+I will create FDT by a linked list
+*/
+
+//step 1: create fdt
+typedef struct _file_descriptor   //"_" --> private
+{
+  int fd;
+  int file_position;
+  int index_node_number;
+  struct _file_descriptor *next;
+  struct _file_descriptor *prev;
+} file_descriptor_t;
+
+
+/* This function append the file descriptor to the end of the file descriptor table. */
+void append_file_descriptor_to_list(file_descriptor_t *file_descriptor);
+
+/* This function remove the file descriptor from the file descriptor table. */
+void remove_file_descriptor_from_list(file_descriptor_t *file_descriptor);
+
+/* This function find the file descriptor with the specified file descriptor value, fd. */
+file_descriptor_t *find_file_descriptor(int fd);
+
+int current_fd = 1;
+file_descriptor_t *file_descriptor_list_head = NULL;
+file_descriptor_t *file_descriptor_list_tail = NULL;
+
+
+//step2: This function append the file descriptor to the end of the file descriptor table. 
+void append_file_descriptor_to_list(file_descriptor_t *file_descriptor)
+{
+  file_descriptor_t *head = NULL;
+  file_descriptor_t *tail = NULL;
+  
+  head = file_descriptor_list_head;
+  tail = file_descriptor_list_tail;
+  if (NULL == head)
+  {
+    head = file_descriptor;
+    file_descriptor->prev = NULL;
+  }
+  else
+  {
+    file_descriptor->prev = tail;
+    tail->next = file_descriptor;
+  }
+  file_descriptor->next = NULL;
+  tail = file_descriptor;
+
+  file_descriptor_list_head = head;
+  file_descriptor_list_tail = tail;
+}
+
+//step3: This function remove the file descriptor from the file descriptor table. 
+void remove_file_descriptor_from_list(file_descriptor_t *file_descriptor)
+{
+  file_descriptor_t *head = NULL;
+  file_descriptor_t *tail = NULL;
+  file_descriptor_t *prev = NULL;
+  file_descriptor_t *next = NULL;
+  
+  head = file_descriptor_list_head;
+  tail = file_descriptor_list_tail;
+
+  prev = file_descriptor->prev;
+  next = file_descriptor->next;
+  if (NULL != next)
+  {
+    next->prev = prev;
+  }
+  if (NULL != prev)
+  {
+    prev->next = next;
+  }
+  if (head == file_descriptor)
+  {
+    head = next;
+  }
+  if (tail == file_descriptor)
+  {
+    tail = prev;
+  }
+
+  file_descriptor_list_head = head;
+  file_descriptor_list_tail = tail;
+}
+
+
+//step4: This function find the file descriptor with the specified file descriptor value, fd. 
+file_descriptor_t *find_file_descriptor(int fd)
+{
+  file_descriptor_t *curr = NULL;
+
+  curr = file_descriptor_list_head;
+  while (NULL != curr)
+  {
+    // Return the file descriptor with the specified file descriptor value, fd.
+    if (fd == curr->fd)
+    {
+      return curr;
+    }
+    curr = curr->next;
+  }
+
+  return NULL;
+}
+
+
 // Function to initialize the filesystem
 int initialize_filesystem(void) {
     printk("Initializing RAM Disk!\n");
@@ -92,6 +202,9 @@ int initialize_filesystem(void) {
     ramdisk->superblock_data.free_inodes = MAX_INODES;
 
     // IMPLEMENT ME - need to initialize process file table 
+    file_descriptor_list_head = NULL;
+    file_descriptor_list_tail = NULL;
+    current_fd = 1;  // Initialize the global file descriptor counter
 
     int result = rd_mkdir("/"); // Create the root directory
     if (result != 0) {
@@ -160,79 +273,7 @@ static void __exit cleanup_routine(void) {
 module_init(initialization_routine);
 module_exit(cleanup_routine);
 
-/*
-From here, are steps to implemente FDT
-I will create FDT by a linked list
-*/
 
-//step 1: create fd
-typedef struct FileDescriptor
-{
-  int fd;   //vlaue
-  int file_position;  
-  int index_node_number; 
-  struct FileDescriptor *next;  //pointer to next fd in fdt
-  struct FileDescriptor *prev;
-} FileDescriptor;
-
-//step 2: create fdt
-typedef struct {
-    FileDescriptor *head; // pointer to head of fdt
-} FDT;
-
-//step3: function to initialize FDT
-FDT *initFDT() {
-    FDT *fdt = (FDT *)malloc(sizeof(FDT));  //Call the malloc function to allocate enough memory to store an FDT structure
-    if (fdt == NULL) {
-        perror("Failed to allocate FDT");
-        return NULL;
-    }
-    fdt->head = NULL;   //head is null (initialization)
-    return fdt;
-}
-
-//step4: release the whloe fdt
-void destroyFDT(FDT *fdt) {
-    FileDescriptor *current = fdt->head;
-    while (current != NULL) {
-        FileDescriptor *temp = current;
-        current = current->next;
-        free(temp);    //release all of the dynamical memory allocated here previously.
-    }
-    free(fdt);
-}
-
-//step5: add a new fd into fdt
-void addFD(FDT *fdt, int fd) {
-    FileDescriptor *newFD = (FileDescriptor *)malloc(sizeof(FileDescriptor));
-    if (newFD == NULL) {
-        perror("Failed to allocate FileDescriptor");
-        return;
-    }
-    newFD->fd = fd;
-    newFD->next = fdt->head;
-    fdt->head = newFD;
-}
-
-//remove a fd from fdt
-void removeFD(FDT *fdt, int fd) {
-    FileDescriptor *current = fdt->head;
-    FileDescriptor *prev = NULL;
-
-    while (current != NULL) {
-        if (current->fd == fd) {
-            if (prev == NULL) {  //this fd is a head
-                fdt->head = current->next;
-            } else {
-                prev->next = current->next;
-            }
-            free(current);
-            return;
-        }
-        prev = current;
-        current = current->next;
-    }
-}
 
 
 
@@ -495,4 +536,45 @@ int rd_mkdir(char *pathname){
     }
     return -1;
 }
+
+//open current file
+int rd_open(char *pathname) {
+    printk(KERN_INFO "Opening file through rd_open...\n");
+
+    int inode_index;
+    file_descriptor_t *new_fd;
+
+    // 1. find the inode of the file
+    inode_index = find_inode_index_by_path(pathname);
+    if (inode_index < 0) {
+        printk(KERN_ERR "File not found.\n");
+        return -1;  // file not found
+    }
+
+    // 2. allocate new fd
+    new_fd = (file_descriptor_t *)vmalloc(sizeof(file_descriptor_t));
+    if (new_fd == NULL) {
+        printk(KERN_ERR "Failed to allocate memory for file descriptor.\n");
+        return -ENOMEM;  
+    }
+
+    // 3. initialize the fd
+    new_fd->fd = current_fd++;
+    new_fd->file_position = 0;  //set the position(offset) to 0
+                                //means we will start read & write from beginning
+    new_fd->index_node_number = inode_index;
+    new_fd->prev = NULL;
+    new_fd->next = NULL;
+
+    // 4. append the new fd to fdt
+    append_file_descriptor_to_list(new_fd);
+
+    printk(KERN_INFO "File '%s' opened successfully with FD %d.\n", pathname, new_fd->fd);
+
+    
+    return new_fd->fd;
+}
+
+
+
 
