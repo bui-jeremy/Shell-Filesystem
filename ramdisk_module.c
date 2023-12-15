@@ -5,6 +5,8 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 MODULE_LICENSE("GPL");
 
@@ -157,6 +159,83 @@ static void __exit cleanup_routine(void) {
 
 module_init(initialization_routine);
 module_exit(cleanup_routine);
+
+/*
+From here, are steps to implemente FDT
+I will create FDT by a linked list
+*/
+
+//step 1: create fd
+typedef struct FileDescriptor
+{
+  int fd;   //vlaue
+  int file_position;  
+  int index_node_number; 
+  struct FileDescriptor *next;  //pointer to next fd in fdt
+  struct FileDescriptor *prev;
+} FileDescriptor;
+
+//step 2: create fdt
+typedef struct {
+    FileDescriptor *head; // pointer to head of fdt
+} FDT;
+
+//step3: function to initialize FDT
+FDT *initFDT() {
+    FDT *fdt = (FDT *)malloc(sizeof(FDT));  //Call the malloc function to allocate enough memory to store an FDT structure
+    if (fdt == NULL) {
+        perror("Failed to allocate FDT");
+        return NULL;
+    }
+    fdt->head = NULL;   //head is null (initialization)
+    return fdt;
+}
+
+//step4: release the whloe fdt
+void destroyFDT(FDT *fdt) {
+    FileDescriptor *current = fdt->head;
+    while (current != NULL) {
+        FileDescriptor *temp = current;
+        current = current->next;
+        free(temp);    //release all of the dynamical memory allocated here previously.
+    }
+    free(fdt);
+}
+
+//step5: add a new fd into fdt
+void addFD(FDT *fdt, int fd) {
+    FileDescriptor *newFD = (FileDescriptor *)malloc(sizeof(FileDescriptor));
+    if (newFD == NULL) {
+        perror("Failed to allocate FileDescriptor");
+        return;
+    }
+    newFD->fd = fd;
+    newFD->next = fdt->head;
+    fdt->head = newFD;
+}
+
+//remove a fd from fdt
+void removeFD(FDT *fdt, int fd) {
+    FileDescriptor *current = fdt->head;
+    FileDescriptor *prev = NULL;
+
+    while (current != NULL) {
+        if (current->fd == fd) {
+            if (prev == NULL) {  //this fd is a head
+                fdt->head = current->next;
+            } else {
+                prev->next = current->next;
+            }
+            free(current);
+            return;
+        }
+        prev = current;
+        current = current->next;
+    }
+}
+
+
+
 
 
 //this function is to parse the path of the parent directory from the complete file path
