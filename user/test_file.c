@@ -31,7 +31,7 @@
 
 #include<sys/types.h>
 #include<sys/wait.h>
-#include "ramdisk.h"
+#include "ramdisk_test.h"
 #define USE_RAMDISK
 
 #define TEST1

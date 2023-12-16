@@ -8,11 +8,7 @@
 #include <sys/ioctl.h>
 
 
-#include "ramdisk.h"
-
-
-
-
+#include "ramdisk_test.h"
 
 typedef struct _ramdisk_file_descriptor
 {

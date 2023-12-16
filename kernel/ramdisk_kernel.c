@@ -135,9 +135,6 @@ const char *get_filename(const char *pathname)
   return filename_start;
 }
 
-#define NULL 0
-
-
 /* This function set one value to a block memory. */
 void memset_ramdisk(void *dst, unsigned char value, int size)
 {
@@ -200,7 +197,7 @@ void ramdisk_init()
   int j = 0;
   int index = 0;
   superblock_t *superblock = NULL;
-  index_node_t *index_node_array = NmamaULL;
+  index_node_t *index_node_array = NULL;
   unsigned char *block_bitmap = NULL;
 
   /* Call the vmalloc function to allocate 2MB memory for the ramdisk. */
