@@ -25,49 +25,50 @@ struct operations{
 	int input_size;
 }
 
-// superblock is the first block of the RAM disk (256 byttes)
-struct superblock {
-    unsigned int free_blocks;
-    unsigned int free_inodes;
-    char remaining[248]; // Remaining space in the block
-};
-
-// index node for each file
-struct index_node {
-    char type[4]; // assuming a maximum of 3 characters for type
-    size_t size;
-    void *location[10]; // First 8 blocks are direct, 9th is single indirect, 10th is double indirect
-    int dir_entries_count;
-    char remaining[6]; 
-};
-
-// bitmap to keep track of free blocks 0 = free, 1 = used
-struct bitmap {
-    char bits[BLOCK_SIZE]; // 1 bit per block
-};
-
 // directory entry for each file
-struct dir_entry{
+typedef struct dir_entry{
     char name[14];
     int inode_index; // 2 bytes
-};
+} dir_entry_struct;
 
 // data block storage
 typedef union data_block data_block_struct;
 union data_block{
     char data[BLOCK_SIZE];
-    struct dir_entry dir_entries[16];
-    data_block_struct index_block[BLOCK_SIZE/4];
+    dir_entry_struct dir_entries[16];
+    data_block_struct *index_block[BLOCK_SIZE/4];
 };
+
+// superblock is the first block of the RAM disk (256 byttes)
+typedef struct superblock {
+    unsigned int free_blocks;
+    unsigned int free_inodes;
+    char remaining[248]; // Remaining space in the block
+} superblock_struct;
+
+// index node for each file
+typedef struct index_node {
+    char type[4]; // assuming a maximum of 3 characters for type
+    size_t size;
+    datablock_struct* locations[10]; // 8 direct pointers, 1 single indirect pointer, 1 double indirect pointer
+    int dir_entries_count;
+    char remaining[6]; 
+} index_node_struct;
+
+// bitmap to keep track of free blocks 0 = free, 1 = used
+typedef struct bitmap {
+    char bits[BLOCK_SIZE]; // 1 bit per block
+} bitmap_struct;
+
 
 // ramdisk data structure
 struct ramdisk_struct{
     // 1 block for superblock
-    struct superblock superblock_data;
+    superblock_struct superblock_data;
     // 256 blocks for inodes
-    struct index_node index_node_data[MAX_INODES];
+    index_node_struct index_node_data[MAX_INODES];
     // 4 blocks for bitmap
-    struct bitmap bitmap_data[4];
+    bitmap_struct bitmap_data[4];
     // 4096 - 1 - 256 - 4 = 3835 blocks for data
     data_block_struct data_block_data[DATA_BLOCK_SIZE];
 }
@@ -273,7 +274,7 @@ int allocate_inode(void) {
     int i;
 
     // Iterate through the inode array to find an unused inode
-    for (i = 0; i < MAX_INODES; i++) {
+    for (i = 0; i < 64; i++) {
         if (inode_pointer[i].type[0] == '\0') {
             // Found an unused inode, mark it as used
             inode_pointer[i].type[0] = 'u'; // 'u' for used, can be any non-empty value
@@ -283,20 +284,6 @@ int allocate_inode(void) {
 
     // No available inode found
     return -1; // Return an error code
-}
-
-/*
-Mark a specific block in a bitmap as used
-
-P.S :Assume that the bitmap structure has a character array named bits to store the bitmap, 
-and each character (byte) represents the usage of 8 blocks
-*/
-void mark_block_as_used(int block_index) {
-    int byte_index = block_index / 8; // 8 bits for a byte
-    int bit_offset = block_index % 8;
-
-    // Set the corresponding bit to 1 to mark this block as used
-    bitmap_pointer->bits[byte_index] |= (1 << bit_offset);
 }
 
 /*
@@ -328,9 +315,10 @@ int rd_create(char *pathname, char* type){
 
     char *my_parent = (char *)vmalloc(strlen(pathname));
     char *my_child = (char *)vmalloc(strlen(pathname));
-    struct index_node *parent_inode_index = NULL;
-    struct index_node *inode_index = NULL;
-    struct dir_entry new_entry;
+    index_node_struct *parent_inode_index = NULL;
+    index_node_struct *inode_index = NULL;
+    dir_entry_struct new_entry;
+    int parent_inode_number, check_child_exists;
     // 1. check superblock for information on free blocks
     if (superblock.free_inodes == 0){
         printk(KERN_ERR "No free i-nodes available.\n");
@@ -347,47 +335,43 @@ int rd_create(char *pathname, char* type){
     // /root/bostonuniversity/CS552/ramdisk.c: parent = /root/bostonuniversity/CS552, child = ramdisk.c
     extract_directory_and_filename(pathname, my_parent, my_child);
 
-    // 3. check to see if parent directory exists, need to recursively check all parent directories
-    parent_inode_index = find_inode_index_by_path(my_parent);
-    if (parent_inode_index < 0) {
+    // 3. check to see if parent directory exists, need to recursively from root -> parent directory
+    parent_inode_number = find_parent_directory_inode(my_parent);
+    if (parent_inode_number < 0) {
         printk(KERN_ERR "Parent directory does not exist.\n");
         return -1;
     }
    
-    // 4. check if file already exists 
-    if (file_exists_in_directory(parent_inode_index, my_child)) {
-        printk(KERN_ERR "File already exists.\n");
+   // 4. check to see if child already exists in parent directory
+   check_child_exists = find_parent_directory_inode(pathname);
+   if (check_child_exists >= 0){
+       printk(KERN_ERR "Child already exists in parent directory.\n");
+       return -1;
+   }
+
+    // 5. find a free entry in parent i node and allocate a block for the new inode
+    dir_entry_struct *free_entry = allocate_free_entry_in_parent(parent_inode_index);
+    if (free_entry == NULL){
+        printk(KERN_ERR "Failed to allocate directory entry.\n");
         return -1;
     }
 
-    // 5. IMPLEMENT ME - find free inode index by looping through i node array
-    inode_index = allocate_inode();
-    if (inode_index < 0) {
+    int free_inode_index = find_free_inode();
+    if (free_inode == -1){
         printk(KERN_ERR "Failed to allocate inode.\n");
         return -1;
     }
 
-    // 6. Initialize inode with child content 
-    initialize_inode(inode_index, my_child, type, parent_inode_index);
-
-    // 7. Update superblock and bitmap
+    // 7. Update all corresponding structures
     super_block_pointer->free_inodes--;
-    // UNDERSTAND or replace
-    mark_block_as_used(inode_index);
-
-    // 8. create file object (understand)
-    dir_struct *new_entry = free_entry(inode_index);
-    if (new_entry == NULL) {
-        printk(KERN_ERR "Failed to allocate directory entry.\n");
-        return -1;
-    }
-    strcpy(new_entry->name, my_child);
-    new_entry->inode_index = inode_index;
-    inode_pointer[parent_inode_index]->offset += 16;
-
-    // 9. IMPLEMENT ME - update parent directory to include child inode
+    mark_block_as_used(free_inode_index);
+    memset(&ramdisk->inode_pointer[free_inode_index], 0, sizeof(index_node_struct));
+    index_node_struct *new_inode = &ramdisk->inode_pointer[free_inode_index];
+    strcpy(free_entry->name, my_child);
+    free_entry->inode_index = free_inode_index;
+    &ramdisk->inode_pointer[parent_inode_index]->size += 16;
     
-    // 10. free used pointers
+    // 8. free used pointers
     vfree(my_parent);
     vfree(my_child);
 
@@ -416,3 +400,217 @@ int rd_mkdir(char *pathname){
     return -1;
 }
 
+// mark specific bit used
+void mark_bit_as_used(int block_index) {
+    int byte_index = block_index / 8; // 8 bits for a byte
+    int bit_offset = block_index % 8;
+
+    // Set the corresponding bit to 1 to mark this block as used
+    ramdisk->bitmap_data[byte_index] |= (1 << bit_offset);
+}
+
+int bitmap_search(unsigned char* map) {
+    if (discos->superblock.free_blocks <= 0) {
+        return -1; // No free blocks available
+    }
+    int i, j;
+    for (i = 0; i < 1024; i++) {
+        unsigned char ch = map[i];
+        if (ch != 255) {
+            // Found a byte with a free bit
+            for (j = 0; j < 8; j++) {
+                if ((ch & (1 << j)) == 0) {
+                    int free_bit = i * 8 + j;
+                    if (free_bit < 7931) {
+                        return free_bit; // Return the free block number
+                    } else {
+                        return -1; // Out of range, no valid free blocks
+                    }
+                }
+            }
+        }
+    }
+    return -1; // No free blocks found
+}
+
+dir_entry_struct* allocate_free_entry_in_parent(index_node_struct *parent_inode) {
+   int current_block_index = parent_inode->size/256;
+   int i;
+   // search parent's direct pointers
+   for(i=current_block_index; i < 8; i++){
+    data_block_struct* direct_pointer = parent_inode->location[i];
+    // find null! allocate here
+    if (direct_pointer == NULL){
+        int free_bit = bitmap_search(ramdisk->bitmap_data);
+        if (free_bit == -1){
+            printk(KERN_ERR "No free blocks available.\n");
+            return NULL;
+        }
+        printk(KERN_INFO "Allocating new block for parent directory.\n");
+        // allocate the data block and assign to inode
+        memset(&ramdisk->data_block_data[free_bit].data, 0, BLOCK_SIZE);
+        mark_bit_as_used(free_bit);
+        ramdisk->super_block_pointer->free_blocks--;
+        parent_inode->location[i] = &ramdisk->data_block_data[free_bit];
+    }
+    // if there is still space in block
+    dir_entry_struct* curr_entry = NULL;
+    int j;
+    for (j = 0; j < 16; j++){
+        if (direct_pointer->dir_entries[j].inode_num == NULL){
+            int free_bit = bitmap_search(ramdisk->bitmap_data);
+            if (free_bit == -1){
+                printk(KERN_ERR "No free blocks available.\n");
+                return NULL;
+            }
+            printk(KERN_INFO "Allocating new block for parent directory.\n");
+            // allocate the data block and assign to inode
+            memset(&ramdisk->data_block_data[free_bit].data, 0, BLOCK_SIZE);
+            mark_bit_as_used(free_bit);
+            ramdisk->super_block_pointer->free_blocks--;
+            parent_inode->location[9] = &ramdisk->data_block_data[free_bit];
+        }
+    }
+   }
+
+   //single indirect pointer search
+   // 8 direct blocks + 64 of the indirect block
+   if (current_block_index <= 72){
+        if (parent_inode->location[8] == NULL){
+            int free_bit = bitmap_search(ramdisk->bitmap_data);
+            if (free_bit == -1){
+                printk(KERN_ERR "No free blocks available.\n");
+                return NULL;
+            }
+            printk(KERN_INFO "Allocating new block for parent directory.\n");
+            memset(ramdisk->data_block_data[free_bit].data, 0, BLOCK_SIZE);
+            mark_bit_as_used(free_bit);
+            ramdisk->super_block_pointer->free_blocks--;
+            parent_inode->location[8] = &ramdisk->data_block_data[free_bit];
+        }
+   }
+}
+
+int find_parent_directory_inode(char* pathname){
+    char *curr_path = (char *)vmalloc(strlen(pathname));
+    int curr_node = 0;
+    int found_directory = 0;
+    strcpy(curr_path, pathname);
+    // parent directory is root
+    if (strcmp(curr_path, "/") == 0){
+        return 0;
+    }
+
+    char *searching_path = strsep(&curr_path, "/");
+
+    data_block_struct *curr_block = NULL;
+    // loop from root to parent directory to find parent inode
+    while(searching_path != NULL){
+        int i;
+        // search 8 direct pointers first
+        printk(KERN_INFO "Searching for directory path: %s\n", searching_path);
+        printk(KERN_INFO "Searching through direct pointers\n");
+        for (i = 0; i < 8; i++){
+            curr_block = ramdisk->index_node_data[curr_node].location[i];
+            // nothing inside datablock
+            if (curr_block != NULL){
+                int j;
+                // 16 entries in a block
+                for (j = 0; j < 16; j++){
+                    dir_entry_struct *curr_entry = curr_block->dir_entries[j];
+                    if (strcmp(curr_entry->name, searching_path) == 0){
+                        curr_node = curr_entry->inode_index;
+                        found_directory = 1;
+                        break;
+                    }
+                }
+            }
+            if (found_directory == 1){
+                break;
+            }
+        }
+        // go to next iteration of path or parent directory i node found
+        if (found_directory == 1){
+            prinktk(KERN_INFO "Directory path found: %s\n", searching_path);
+            searching_path = strsep(&curr_path, "/");
+            found_directory = 0;
+            continue;
+        }
+
+        // search single indirect pointer
+        printk(KERN_INFO "Searching through single indirect pointers\n")
+        data_block_struct *single_indirect_block = ramdisk->index_node_data[curr_node].location[8];
+        if (single_indirect_block != NULL){
+            int k;
+            // 256 bytes / 4 bytes for a pointer, 64 pointers in a block
+            for (k = 0; k < 64; k++){
+                curr_block = single_indirect_block->index_block[k];
+                if (curr_block != NULL){
+                    int l;
+                    for (l = 0; l < 16; l++){
+                        dir_entry_struct *curr_entry = curr_block->dir_entries[l];
+                        if (strcmp(curr_entry->name, searching_path) == 0){
+                            curr_node = curr_entry->inode_index;
+                            found_directory = 1;
+                            break;
+                        }
+                    }
+                }
+                if (found_directory == 1){
+                    break;
+                }
+            }
+        }
+        if (found_directory == 1){
+            prinktk(KERN_INFO "Directory path found: %s\n", searching_path);
+            searching_path = strsep(&curr_path, "/");
+            found_directory = 0;
+            continue;
+        }
+
+        // search double indirect pointer
+        printk(KERN_INFO "Searching through double indirect pointers\n");
+        data_block_struct *double_indirect_block = ramdisk->index_node_data[curr_node].location[9];
+        if (double_indirect_block != NULL){
+            int m;
+            for (m = 0; m < 64; m++){
+                data_block_struct *single_indirect_block = double_indirect_block->index_block[m];
+                if (single_indirect_block != NULL){
+                    int n;
+                    for (n = 0; n < 64; n++){
+                        curr_block = single_indirect_block->index_block[n];
+                        if (curr_block != NULL){
+                            int o;
+                            for (o = 0; o < 16; o++){
+                                dir_entry_struct *curr_entry = curr_block->dir_entries[o];
+                                if (strcmp(curr_entry->name, searching_path) == 0){
+                                    curr_node = curr_entry->inode_index;
+                                    found_directory = 1;
+                                    break;
+                                }
+                            }
+                        }
+                        if (found_directory == 1){
+                            break;
+                        }
+                    }
+                }
+                if (found_directory == 1){
+                    break;
+                }
+            }
+        }
+        if (found_directory == 1){
+            prinktk(KERN_INFO "Directory path found: %s\n", searching_path);
+            searching_path = strsep(&curr_path, "/");
+            found_directory = 0;
+            continue;
+        }
+        // directory not found in any of the blocks 
+        printk(KERN_ERR "Directory path not found: %s\n", searching_path);
+        return -1;
+    }
+    // escapes when it parses through the full parent directory path (from root -> parent directory)
+    return curr_node;
+
+}
