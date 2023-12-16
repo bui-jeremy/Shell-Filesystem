@@ -1,12 +1,35 @@
+
+
+
+
+
+KDIR = /lib/modules/`uname -r`/build
+CC_TEST       = gcc
+CFLAGS_TEST   = -I./ -pedantic -Wall -std=gnu99
+LDFLAGS_TEST  =  
+
+
+obj = test_file.ot ramdisk.ot
+test_program = ramdisk_test
+
+
 obj-m += ramdisk_module.o
+ramdisk_module-y = ramdisk_module_main.o
 
-KERNEL_VERSION := 2.6.33.2
 
-build_module: ramdisk_module.c
-	make -C /lib/modules/$(KERNEL_VERSION)/build SUBDIRS=$(PWD) modules
+all: kernel_module $(test_program)
 
-load: build_module
-	insmod ramdisk_module.ko
+kernel_module:
+	make -C $(KDIR) M=`pwd` modules
 
-unload:
-	rmmod ramdisk_module.ko
+$(test_program): $(obj)
+	$(CC_TEST) $(obj) -o $(test_program) $(LDFLAGS_TEST) 
+
+clean:
+	make -C $(KDIR) M=`pwd` clean
+	rm $(obj) $(test_program) -f
+	
+%.ot:%.c
+	$(CC_TEST) -c $< -o $@ $(CFLAGS_TEST) 
+
+
