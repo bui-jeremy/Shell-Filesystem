@@ -17,52 +17,39 @@ typedef struct _ramdisk_file_descriptor
 } ramdisk_file_descriptor_t;
 
 
-/* This function append the file descriptor to the end of the file descriptor table. */
+/* append the file descriptor to the end of the file descriptor table. */
 void append_file_descriptor_to_list(ramdisk_file_descriptor_t *file_descriptor);
 
-/* This function remove the file descriptor from the file descriptor table. */
+/* remove the file descriptor from the file descriptor table. */
 void remove_file_descriptor_from_list(ramdisk_file_descriptor_t *file_descriptor);
 
-/* This function find the file descriptor with the specified file descriptor value, fd. */
+/* find the file descriptor with the specified file descriptor value, fd. */
 ramdisk_file_descriptor_t *find_file_descriptor(int fd);
 
 
 
-int ramdisk_current_fd = 1;
+int ramdisk_current_fd = 1;   //0 in, 1 out, 2 error
 ramdisk_file_descriptor_t *ramdisk_file_descriptor_list_head = NULL;
 ramdisk_file_descriptor_t *ramdisk_file_descriptor_list_tail = NULL;
 
 
-
-/* This function create a regular file with absolute pathname
-   from the root of the directory tree,
-   where each directory filename is delimited by a "/" character. */
 int rd_creat(char *pathname)
 {
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to create a regular file. */
   return ramdisk_creat(pathname);
 }
 
 
-/* This function remove the file from the ramdisk with absolute
-   pathname from the filesystem, freeing its memory in the ramdisk. */
 int rd_unlink(char *pathname)
 {
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to remove the file from the ramdisk with absolute
-     pathname from the filesystem, freeing its memory in the ramdisk. */
   return ramdisk_unlink(pathname);
 }
 
-/* This function open an existing file corresponding to pathname. */
 int rd_open(char *pathname)
 {
   int index_node_number = -1;
   ramdisk_file_descriptor_t *file_descriptor = NULL;
 
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to open an existing file corresponding to pathname. */
+  /* Call the /proc/ramdisk kernel module's ioctl function to open */
   if (0 != ramdisk_open(pathname, &index_node_number))
   {
     return -1;
@@ -84,8 +71,7 @@ int rd_close(int fd)
 {
   ramdisk_file_descriptor_t *file_descriptor = NULL;
 
-  /* if fd refers to a non-existent file,
-     this function will return -1 to indicate fail. */
+  /* if fd refers to a non-existent file, return -1 */
   file_descriptor = find_file_descriptor(fd);
   if (NULL == file_descriptor)
   {
@@ -105,8 +91,7 @@ int rd_close(int fd)
 }
 
 
-/* This function read up to num_bytes from a regular file
-   to the specified address in the calling process. */
+/* read up to num_bytes from a regular file to the specified address in the calling process. */
 int rd_read(int fd, char *address, int num_bytes)
 {
   int data_length_read = 0;
@@ -119,9 +104,7 @@ int rd_read(int fd, char *address, int num_bytes)
   {
     return -1;
   }
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to read up to num_bytes from a regular file
-     to the specified address in the calling process. . */
+  /* Call the /proc/ramdisk kernel module's ioctl function */
   data_length_read = ramdisk_read(file_descriptor->index_node_number,
     file_descriptor->file_position,
     address,
@@ -136,8 +119,7 @@ int rd_read(int fd, char *address, int num_bytes)
   return data_length_read;
 }
 
-/* This function write up to num_bytes from the specified address
-   in the calling process to a regular file. */
+/* write up to num_bytes from the specified address in the calling process to a regular file. */
 int rd_write(int fd, char *address, int num_bytes)
 {
   int data_length_write = 0;
@@ -150,9 +132,7 @@ int rd_write(int fd, char *address, int num_bytes)
   {
     return -1;
   }
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to write up to num_bytes from the specified address
-     in the calling process to a regular file. */
+  /* Call the /proc/ramdisk kernel module's ioctl function */
   data_length_write = ramdisk_write(file_descriptor->index_node_number,
     file_descriptor->file_position,
     address,
@@ -167,10 +147,7 @@ int rd_write(int fd, char *address, int num_bytes)
   return data_length_write;
 }
 
-/* This function set the file object's file position
-   identified by index node number index_node_number,
-   to offset, returning the new position, or the end of the
-   file position if the offset is beyond the file's current size. */
+/* set the file object's file offset */
 int rd_lseek(int fd, int offset)
 {
   int seek_result_offset = -1;
@@ -199,18 +176,13 @@ int rd_lseek(int fd, int offset)
 }
 
 
-/* This function create a directory file with absolute pathname
-   from the root of the directory tree,
-   where each directory filename is delimited by a "/" character. */
+/* create a directory file */
 int rd_mkdir(char *pathname)
 {
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to create a directory. */
   return ramdisk_mkdir(pathname);
 }
 
-/* This function read one entry from a directory file identified by
-   index node number index_node_number, and store the result
+/* read one entry from a directory file and store the result
    in memory at the specified value of address. */
 int rd_readdir(int fd, char *address)
 {
@@ -232,8 +204,7 @@ int rd_readdir(int fd, char *address)
     return -1;
   }
   /* Call the /proc/ramdisk kernel module's ioctl function
-     to read one entry from a directory file identified by
-     index node number index_node_number, and store the result
+     to read one entry from a directory file and store the result
      in memory at the specified value of address. */
   next_file_position = file_descriptor->file_position;
   read_result = ramdisk_readdir(file_descriptor->index_node_number,
@@ -248,7 +219,7 @@ int rd_readdir(int fd, char *address)
   return read_result;
 }
 
-/* This function append the file descriptor to the end of the file descriptor table. */
+/* append the file descriptor to the end of the file descriptor table. */
 void append_file_descriptor_to_list(ramdisk_file_descriptor_t *file_descriptor)
 {
   ramdisk_file_descriptor_t *head = NULL;
@@ -274,7 +245,7 @@ void append_file_descriptor_to_list(ramdisk_file_descriptor_t *file_descriptor)
 }
 
 
-/* This function remove the file descriptor from the file descriptor table. */
+/* remove the file descriptor from the file descriptor table. */
 void remove_file_descriptor_from_list(ramdisk_file_descriptor_t *file_descriptor)
 {
   ramdisk_file_descriptor_t *head = NULL;
@@ -309,7 +280,7 @@ void remove_file_descriptor_from_list(ramdisk_file_descriptor_t *file_descriptor
 }
 
 
-/* This function find the file descriptor with the specified file descriptor value, fd. */
+/* find the file descriptor with the specified file descriptor value, fd. */
 ramdisk_file_descriptor_t *find_file_descriptor(int fd)
 {
   ramdisk_file_descriptor_t *curr = NULL;
@@ -329,11 +300,10 @@ ramdisk_file_descriptor_t *find_file_descriptor(int fd)
 }
 
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
-   to create a regular file. */
+/* call the /proc/ramdisk kernel module's ioctl function to create a regular file. */
 int ramdisk_creat(char *pathname)
 {
-  int ret = 0;
+  int ret = 0;   //return value of the ioctl function call
   int fd = 0;
   creat_param_t creat_param;
 
@@ -345,8 +315,7 @@ int ramdisk_creat(char *pathname)
   creat_param.return_value = -1;
   creat_param.pathname.pathname = (const char *)pathname;
   creat_param.pathname.pathname_length = (int)strlen(pathname);
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to create a regular file. */
+  /* Call the /proc/ramdisk kernel module's ioctl function --->  make request */
   ret = ioctl(fd, IOCTL_CREAT, &creat_param);
   close(fd);
   if (ret != 0)
@@ -362,9 +331,7 @@ int ramdisk_creat(char *pathname)
 }
 
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
-   to remove the file from the ramdisk with absolute
-   pathname from the filesystem, freeing its memory in the ramdisk. */
+/* remove the file, freeing its memory in the ramdisk. */
 int ramdisk_unlink(char *pathname)
 {
   int ret = 0;
@@ -379,10 +346,8 @@ int ramdisk_unlink(char *pathname)
   unlink_param.return_value = -1;
   unlink_param.pathname.pathname = (const char *)pathname;
   unlink_param.pathname.pathname_length = (int)strlen(pathname);
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to remove the file from the ramdisk with absolute
-     pathname from the filesystem, freeing its memory in the ramdisk. */
-  ret = ioctl(fd, IOCTL_UNLINK, &unlink_param);
+
+  ret = ioctl(fd, IOCTL_UNLINK, &unlink_param); //make request to kernel
   close(fd);
   if (ret != 0)
   {
@@ -396,8 +361,7 @@ int ramdisk_unlink(char *pathname)
   return 0;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
-   to open an existing file corresponding to pathname. */
+/* call the /proc/ramdisk kernel module's ioctl function to open an existing file. */
 int ramdisk_open(char *pathname, int *index_node_number)
 {
   int ret = 0;
@@ -412,9 +376,8 @@ int ramdisk_open(char *pathname, int *index_node_number)
   open_param.return_value = -1;
   open_param.pathname.pathname = (const char *)pathname;
   open_param.pathname.pathname_length = (int)strlen(pathname);
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to open an existing file corresponding to pathname. */
-  ret = ioctl(fd, IOCTL_OPEN, &open_param);
+
+  ret = ioctl(fd, IOCTL_OPEN, &open_param);   //make request to kernel
   close(fd);
   if (ret != 0)
   {
@@ -429,7 +392,7 @@ int ramdisk_open(char *pathname, int *index_node_number)
   return 0;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
+/* call the /proc/ramdisk kernel module's ioctl function
    to close the corresponding file. */
 int ramdisk_close(int index_node_number)
 {
@@ -445,9 +408,8 @@ int ramdisk_close(int index_node_number)
   close_param.return_value = -1;
   close_param.index_node_number = index_node_number;
   ret = ioctl(fd, IOCTL_CLOSE, &close_param);
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to close the corresponding file. */
-  close(fd);
+
+  close(fd);   //make request to kernel
   if (ret != 0)
   {
     return -1;
@@ -456,7 +418,7 @@ int ramdisk_close(int index_node_number)
   return close_param.return_value;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
+/* call the /proc/ramdisk kernel module's ioctl function
    to read up to num_bytes from a regular file
    to the specified address in the calling process. . */
 int ramdisk_read(int index_node_number, int file_position, char *address, int num_bytes)
@@ -475,10 +437,8 @@ int ramdisk_read(int index_node_number, int file_position, char *address, int nu
   read_param.file_position = file_position;
   read_param.address = address;
   read_param.num_bytes = num_bytes;
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to read up to num_bytes from a regular file
-     to the specified address in the calling process. . */
-  ret = ioctl(fd, IOCTL_READ, &read_param);
+
+  ret = ioctl(fd, IOCTL_READ, &read_param);   ////make request to kernel
   close(fd);
   if (ret != 0)
   {
@@ -492,7 +452,7 @@ int ramdisk_read(int index_node_number, int file_position, char *address, int nu
   return read_param.return_value;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
+/* call the /proc/ramdisk kernel module's ioctl function
    to write up to num_bytes from the specified address
    in the calling process to a regular file. */
 int ramdisk_write(int index_node_number, int file_position, char *address, int num_bytes)
@@ -511,10 +471,8 @@ int ramdisk_write(int index_node_number, int file_position, char *address, int n
   write_param.file_position = file_position;
   write_param.address = address;
   write_param.num_bytes = num_bytes;
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to write up to num_bytes from the specified address
-     in the calling process to a regular file. */
-  ret = ioctl(fd, IOCTL_WRITE, &write_param);
+
+  ret = ioctl(fd, IOCTL_WRITE, &write_param);    //make request to kernel
   close(fd);
   if (ret != 0)
   {
@@ -528,7 +486,7 @@ int ramdisk_write(int index_node_number, int file_position, char *address, int n
   return write_param.return_value;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
+/* call the /proc/ramdisk kernel module's ioctl function
    to set the file object's file position
    identified by index node number index_node_number, to offset. */
 int ramdisk_lseek(int index_node_number, int seek_offset, int *seek_result_offset)
@@ -546,10 +504,8 @@ int ramdisk_lseek(int index_node_number, int seek_offset, int *seek_result_offse
   lseek_param.index_node_number = index_node_number;
   lseek_param.seek_offset = seek_offset;
   lseek_param.seek_result_offset = -1;
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to set the file object's file position
-     identified by index node number index_node_number, to offset. */
-  ret = ioctl(fd, IOCTL_LSEEK, &lseek_param);
+
+  ret = ioctl(fd, IOCTL_LSEEK, &lseek_param);    //make request to kernel
   close(fd);
   if (ret != 0)
   {
@@ -564,7 +520,7 @@ int ramdisk_lseek(int index_node_number, int seek_offset, int *seek_result_offse
   return lseek_param.return_value;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
+/* call the /proc/ramdisk kernel module's ioctl function
    to create a directory. */
 int ramdisk_mkdir(char *pathname)
 {
@@ -580,10 +536,9 @@ int ramdisk_mkdir(char *pathname)
   mkdir_param.return_value = -1;
   mkdir_param.pathname.pathname = (const char *)pathname;
   mkdir_param.pathname.pathname_length = (int)strlen(pathname);
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to create a directory. */
-  ret = ioctl(fd, IOCTL_MKDIR, &mkdir_param);
-  close(fd);
+
+  ret = ioctl(fd, IOCTL_MKDIR, &mkdir_param);     //make request to kernel
+  close(fd); 
   if (ret != 0)
   {
     return -1;
@@ -596,9 +551,8 @@ int ramdisk_mkdir(char *pathname)
   return 0;
 }
 
-/* This function call the /proc/ramdisk kernel module's ioctl function
-   to read one entry from a directory file identified by
-   index node number index_node_number, and store the result
+/* call the /proc/ramdisk kernel module's ioctl function
+   to read one entry from a directory file, and store the result
    in memory at the specified value of address. */
 int ramdisk_readdir(int index_node_number, char *address, int *file_position)
 {
@@ -614,11 +568,8 @@ int ramdisk_readdir(int index_node_number, char *address, int *file_position)
   readdir_param.return_value = -1;
   readdir_param.index_node_number = index_node_number;
   readdir_param.file_position = *file_position;
-  /* Call the /proc/ramdisk kernel module's ioctl function
-     to read one entry from a directory file identified by
-     index node number index_node_number, and store the result
-     in memory at the specified value of address. */
-  ret = ioctl(fd, IOCTL_READDIR, &readdir_param);
+
+  ret = ioctl(fd, IOCTL_READDIR, &readdir_param);     //make request to kernel
   close(fd);
   if (ret != 0)
   {
