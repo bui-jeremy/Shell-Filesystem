@@ -8,7 +8,7 @@ static unsigned char *ramdisk_memory;
 #define NULL 0
 
 
-/* 复制字符串到指定位置 */
+/* Copy string to specified location */
 void strcpy_ramdisk(char *dst, const char *src)
 {
   int index = 0;
@@ -1136,7 +1136,7 @@ void ramdisk_block_pointer_increase(block_pointer_t *block_pointer)
   else if (double_indirect_block_pointer_type == block_pointer->block_pointer_type)
   {
     block_pointer->double_indirect_block_pointer_column++;
-    
+
     /* If we reach the end of the current column of the two dimension double-indirect
        block pointer, then we move to the beginning of the next column
        of the two dimension double-indirec block pointer. */
