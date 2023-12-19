@@ -407,9 +407,9 @@ int ramdisk_close(int index_node_number)
   }
   close_param.return_value = -1;
   close_param.index_node_number = index_node_number;
-  ret = ioctl(fd, IOCTL_CLOSE, &close_param);
+  ret = ioctl(fd, IOCTL_CLOSE, &close_param);  //make request to kernel
 
-  close(fd);   //make request to kernel
+  close(fd);   
   if (ret != 0)
   {
     return -1;
