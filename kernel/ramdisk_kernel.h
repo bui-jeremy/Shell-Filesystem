@@ -274,7 +274,7 @@ int search_bitmap(void);
 int ramdisk_block_calloc(void);
 /* This function set one allocated used block to free status,
    and free it to the free block list. */
-void allocate_bitmap(int block_pointer);
+void ramdisk_block_free(int block_pointer);
 
 /* This function add an directory entry to its parent directory file index node. */
 int ramdisk_update_parent_directory_file(index_node_t *index_node, dir_entry_t *entry);
@@ -287,7 +287,7 @@ index_node_t *ramdisk_get_directory_index_node(const char *pathname);
 dir_entry_t *ramdisk_get_dir_entry(index_node_t *index_node, const char *filename_start, const char *filename_end);
 /* This function find an empty child directory entry
    from its parent directory file index node.*/
-dir_entry_t *find_empty_entry_in_parent(index_node_t *index_node);
+dir_entry_t *ramdisk_get_empty_entry(index_node_t *index_node);
 
 /* This function initialize the file position's data structure. */
 void ramdisk_file_position_init(file_position_t *file_position,
@@ -320,7 +320,7 @@ int ramdisk_alloc_and_get_block_pointer(block_pointer_t *block_pointer);
    from the root of the directory tree,
    where each directory filename is delimited by a "/" character.
    */
-int ramdisk_creat(char *pathname, char *type);
+int ramdisk_create(char *pathname, char *type);
 
 /* This function remove the file from the ramdisk with absolute
    pathname from the filesystem, freeing its memory in the ramdisk. */

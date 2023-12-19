@@ -28,7 +28,7 @@ const char *find_next_directory(const char *str)
   return NULL;
 }
 
-/* This function is the initialize function of the ramdisk. */
+// initialize ramdisk memory
 void ramdisk_init()
 {
   int x = 0;
@@ -72,7 +72,7 @@ void ramdisk_init()
   printk(KERN_INFO "ramdisk: Finished initializing ramdisk\n");
 }
 
-/* This function free the 2MB memory of the ramdisk allocated by call the vmalloc function. */
+
 void ramdisk_uninit()
 {
   if (NULL != ramdisk_memory)
@@ -83,10 +83,10 @@ void ramdisk_uninit()
 }
 
 // create file with absolute pathname from root of directory tree
-int ramdisk_creat(char *pathname, char *type)
+int ramdisk_create(char *pathname, char *type)
 {
   printk(KERN_INFO "ramdisk: Creating file %s\n", pathname);
-  int index_node_number = 0;
+  int index_node_number = 0, updated_parent = -1;
   index_node_t *parent_directory_index_node = NULL;
   index_node_t *index_node = NULL;
   const char *filename = NULL;
@@ -106,6 +106,7 @@ int ramdisk_creat(char *pathname, char *type)
     return -1;
   }
 
+
   // find an unused index node
   index_node_number = ramdisk_get_unused_index_node();
   if (-1 == index_node_number)
@@ -117,11 +118,15 @@ int ramdisk_creat(char *pathname, char *type)
   memset(index_node, 0, sizeof(index_node_t));
   // set type to file
   strcpy(index_node->type, type);
+  printk(KERN_INFO "Created directory entry at index node %d\n", index_node_number);
 
-  // update parent directory to include file directory
+ 
   strcpy(entry.filename, filename);
   entry.index_node_number = index_node_number;
-  if (ramdisk_update_parent_directory_file(parent_directory_index_node, &entry) != 0)
+
+  // update parent directory to include file directory
+  updated_parent = ramdisk_update_parent_directory_file(parent_directory_index_node, &entry);
+  if (updated_parent != 0)
   {
     return -1;
   }
@@ -401,7 +406,7 @@ int ramdisk_lseek(int index_node_number, int seek_offset, int *seek_result_offse
 // absolute file path from root of directory tree
 int ramdisk_mkdir(char *pathname)
 {
-  return ramdisk_creat(pathname, "dir");
+  return ramdisk_create(pathname, "dir");
 }
 
 /* This function read one entry from a directory file identified by
@@ -480,13 +485,13 @@ void ramdisk_free_index_node_memory(index_node_t *index_node)
     {
       break;
     }
-    allocate_bitmap(block_pointer_value);
+    ramdisk_block_free(block_pointer_value);
     ramdisk_block_pointer_increase(&block_pointer);
   }
   /* Free the block memory for the single-indrect block pointer. */
   if (index_node->location[SINGLE_INDIRECT_BLOCK_POINTER] > 0)
   {
-    allocate_bitmap(index_node->location[SINGLE_INDIRECT_BLOCK_POINTER]);
+    ramdisk_block_free(index_node->location[SINGLE_INDIRECT_BLOCK_POINTER]);
   }
   /* Free the block memory for the double-indrect block pointer. */
   if (index_node->location[DOUBLE_INDIRECT_BLOCK_POINTER] > 0)
@@ -498,9 +503,9 @@ void ramdisk_free_index_node_memory(index_node_t *index_node)
       {
         break;
       }
-      allocate_bitmap(location[loop]);
+      ramdisk_block_free(location[loop]);
     }
-    allocate_bitmap(index_node->location[DOUBLE_INDIRECT_BLOCK_POINTER]);
+    ramdisk_block_free(index_node->location[DOUBLE_INDIRECT_BLOCK_POINTER]);
   }
   /* Clear the location attribute of the file index node with zero. */
   for (loop = 0; loop < 10; loop++)
@@ -612,55 +617,68 @@ int ramdisk_block_calloc()
 }
 
 // allocate block to free status
-void allocate_bitmap(int block_pointer)
+void ramdisk_block_free(int block_pointer)
 {
-  superblock_t *superblock = (superblock_t *)ramdisk_memory;
-  unsigned char *block_bitmap = (ramdisk_memory + BLK_SZ * (1 + INDEX_NODE_ARRAY_BLOCK_COUNT));
+  int index = 0;
+  int k = 0;
+  int mask = 0;
+  superblock_t *superblock = NULL;
+  unsigned char *block_bitmap = NULL;
 
-  // calculate the byte index and the bit offset within the byte
-  int index = block_pointer / 8;
-  int bit_offset = block_pointer % 8;
+  superblock = (superblock_t *)ramdisk_memory;
+  block_bitmap = (ramdisk_memory + BLK_SZ * (1 + INDEX_NODE_ARRAY_BLOCK_COUNT));
 
-  // Create a bitmask for the specific bit
-  unsigned char mask = 1 << bit_offset;
-
-  // check if the block is allocated
-  if (!(block_bitmap[index] & mask)) {
-    // mark the block as used and decrease free block count
-    block_bitmap[index] |= mask;
+  k = block_pointer % 8;
+  index = block_pointer / 8;
+  mask = (1 << k);
+  /* If the bitmap mask bit of the correspond block is 0,
+     then it indicate that this block is a allocated used block,
+     set its bitmap mask bit to 1 to indicate the free status. */
+  if (0 == (block_bitmap[index] & mask))
+  {
+    block_bitmap[index] = block_bitmap[index] | mask;
     superblock->num_free_blocks++;
   }
 }
 
-// add file/directory to parent directory
-int ramdisk_update_parent_directory_file(index_node_t *index_node, dir_entry_t *entry)
-{
+// add entry to parent directory index node
+int ramdisk_update_parent_directory_file(index_node_t *index_node, dir_entry_t *entry) {
   char *dst = NULL;
   file_position_t file_position;
+  dir_entry_t *empty_entry = NULL;
 
-  /* If there is an empty directory entry in the directory file index node,
-     set the empty directory entry to the added empty directory entry. */
-  if ((index_node->dir_entry_count * sizeof(dir_entry_t)) < ((unsigned int)index_node->size))
-  {
-    memcpy(find_empty_entry_in_parent(index_node), entry, sizeof(dir_entry_t));
-    index_node->dir_entry_count++;
-    return 0;
+  // check size of parent index node
+  if ((index_node->size + sizeof(dir_entry_t)) > MAX_FILE_SIZE) {
+    return -1; // Parent directory file is full.
   }
 
-  // check the size of the parent directory file
-  if ((index_node->size + sizeof(dir_entry_t)) > MAX_FILE_SIZE)
-  {
-    return -1;
+  // Init the file position data structure.
+  ramdisk_file_position_init(&file_position, index_node, 0, 1);
+
+  // scan through the directory file until an empty entry is found or the end is reached.
+  while (file_position.file_position < index_node->size) {
+    empty_entry = (dir_entry_t *)ramdisk_get_memory_address(&file_position);
+    if (NULL == empty_entry) {
+      break;
+    }
+    ramdisk_file_position_add(&file_position, sizeof(dir_entry_t));
+    
+    // If an empty child directory entry is found, use it for the new entry.
+    if (0 == strcmp(empty_entry->filename, "")) {
+      memcpy(empty_entry, entry, sizeof(dir_entry_t));
+      index_node->dir_entry_count++;
+      return 0;
+    }
   }
-  /* Init the file position data structure. */
+
+  // now that we have memory address add it to the end of the parent directory file
   ramdisk_file_position_init(&file_position, index_node, index_node->size, 0);
-  // check the memory address 
   dst = ramdisk_get_memory_address(&file_position);
-  if (NULL == dst)
-  {
-    return -1;
+  if (NULL == dst) {
+    return -1; // Unable to retrieve memory address.
   }
-  // append the directory entry to the end of its parent directory file.
+
+  // Append the directory entry to the end of the parent directory file.
   memcpy(dst, entry, sizeof(dir_entry_t));
   index_node->size = index_node->size + sizeof(dir_entry_t);
   index_node->dir_entry_count++;
@@ -747,33 +765,6 @@ dir_entry_t *ramdisk_get_dir_entry(index_node_t *index_node, const char *filenam
     }
   }
 
-  return NULL;
-}
-
-// find empty child directory in parent
-dir_entry_t *find_empty_entry_in_parent(index_node_t *index_node)
-{
-  dir_entry_t *entry = NULL;
-  file_position_t file_position;
-
-  // initialize data structures
-  ramdisk_file_position_init(&file_position, index_node, 0, 1);
-  // scna through whole directory path
-  while (file_position.file_position < index_node->size)
-  {
-    entry = (dir_entry_t *)ramdisk_get_memory_address(&file_position);
-    if (NULL == entry)
-    {
-      break;
-    }
-    // check file position by adding size of directory entry
-    ramdisk_file_position_add(&file_position, sizeof(dir_entry_t));
-    // return entry if it is empty at position
-    if (0 == strcmp(entry->filename, ""))
-    {
-      return entry;
-    }
-  }
   return NULL;
 }
 
@@ -914,18 +905,11 @@ int ramdisk_alloc_and_get_block_pointer(block_pointer_t *block_pointer)
   {
     if (0 == location[SINGLE_INDIRECT_BLOCK_POINTER])
     {
-      if (block_pointer->is_read_mode)
-      {
-        return -1;
-      }
-      else
-      {
         location[SINGLE_INDIRECT_BLOCK_POINTER] = ramdisk_block_calloc();
         if (location[SINGLE_INDIRECT_BLOCK_POINTER] <= 0)
         {
           return -1;
         }
-      }
     }
     location = (int *)(ramdisk_memory + (BLK_SZ * location[SINGLE_INDIRECT_BLOCK_POINTER]));
   }
@@ -941,9 +925,13 @@ int ramdisk_alloc_and_get_block_pointer(block_pointer_t *block_pointer)
       }
       else
       {
-        /* If we fail in allocate the neccesary block memory,
-           then this function will return -1. */
-        location[DOUBLE_INDIRECT_BLOCK_POINTER] = ramdisk_block_calloc();
+        int block_index = 0;
+        block_index = search_bitmap();
+        if (block_index > 0)
+        {
+          memset((ramdisk_memory + (BLK_SZ * block_index)), 0, BLK_SZ);
+        }
+        location[DOUBLE_INDIRECT_BLOCK_POINTER] = block_index;
         if (location[DOUBLE_INDIRECT_BLOCK_POINTER] <= 0)
         {
           return -1;
