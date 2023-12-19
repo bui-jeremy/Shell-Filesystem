@@ -9,7 +9,7 @@
 #include "ramdisk_kernel.h"
 
 
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("GPL");      //uses the GNU General Public License (GPL).
 
 /* Declaration of module entry(initialization function) and exit */
 void ramdisk_init(void);
@@ -315,7 +315,7 @@ static int rd_readdir(struct inode *inode, struct file *file,
   readdir_param.return_value = ramdisk_readdir(readdir_param.index_node_number,
     readdir_param.address,
     &readdir_param.file_position);
-    
+
   if (readdir_param.return_value > 0)
   {
     /* Get the length of the directory entry data structure, which is the value 16. */

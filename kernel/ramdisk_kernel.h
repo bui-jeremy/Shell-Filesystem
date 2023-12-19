@@ -147,8 +147,7 @@ typedef struct _lseek_param
   int return_value;
   int index_node_number;
   int seek_offset;
-  /* The offset returned by the ramdisk kernel module. */
-  int seek_result_offset;
+  int seek_result_offset;  //The new offset after operations
 
 } lseek_param_t;
 
