@@ -326,7 +326,7 @@ static int rd_readdir(struct inode *inode, struct file *file,
   return 0;
 }
 
-/* This function get the pathname from the calling process(user space). */
+/* get the pathname from the calling process(user space). */
 char *strdup_ramdisk(pathname_t *pathname)
 {
   char *dup_str = NULL;
