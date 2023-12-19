@@ -38,7 +38,7 @@ void ramdisk_init()
   superblock_t *superblock = NULL;
   index_node_t *index_node_array = NULL;
   unsigned char *block_bitmap = NULL;
-  printk(KERN_INFO "ramdisk: Initializing ramdisk\n");
+  printk(KERN_INFO "Initializing ramdisk\n");
   // create 2MB of memory for ramdisk
   ramdisk_memory = (unsigned char *)vmalloc(sizeof(unsigned char) * RAMDISK_MEMORY_SIZE);
   
@@ -69,7 +69,7 @@ void ramdisk_init()
   {
     search_bitmap();
   }
-  printk(KERN_INFO "ramdisk: Finished initializing ramdisk\n");
+  printk(KERN_INFO "Finished initializing ramdisk\n");
 }
 
 
@@ -85,54 +85,140 @@ void ramdisk_uninit()
 // create file with absolute pathname from root of directory tree
 int ramdisk_create(char *pathname, char *type)
 {
-  printk(KERN_INFO "ramdisk: Creating file %s\n", pathname);
+  printk(KERN_INFO "Creating file %s\n", pathname);
   int index_node_number = 0, updated_parent = -1;
   index_node_t *parent_directory_index_node = NULL;
   index_node_t *index_node = NULL;
   const char *filename = NULL;
   dir_entry_t entry;
+  superblock_t *superblock = (superblock_t *)ramdisk_memory;
+  index_node_t *index_node_array = ramdisk_get_index_node(1);
+  char *dst = NULL;
+  file_position_t file_position;
+  dir_entry_t *empty_entry = NULL;
 
-  // iterrate through path up until parent
+  // 1. iterate from root until the parent file node to find parent's inode
   parent_directory_index_node = ramdisk_get_directory_index_node(pathname);
-  if (NULL == parent_directory_index_node)
+  if (parent_directory_index_node == NULL)
   {
     return -1;
   }
 
-  // use strrchr to find the last split of '/' for child directory
+  // 2. use strrchr to find the last split of '/' for child directory
   filename = strrchr(pathname, '/');
   if (ramdisk_get_dir_entry(parent_directory_index_node, filename, NULL) != NULL)
   {
     return -1;
   }
 
-
-  // find an unused index node
-  index_node_number = ramdisk_get_unused_index_node();
-  if (-1 == index_node_number)
+  // 3. find unused inode from inode array
+  int i = 0;
+  for (i = 0; i < MAX_INDEX_NODES_COUNT; i++)
   {
-    return -1;
+    if (0 == strcmp(index_node_array[i].type, ""))
+    {
+      superblock->num_free_index_nodes--;
+      index_node_number = i + 1;
+      break;
+    }
+    else if (i == MAX_INDEX_NODES_COUNT - 1)
+    {
+      return -1;
+    }
   }
-  // return the block from index node array 
+
+  // 4. find correlating block memory address for inode and fill in structures
   index_node = ramdisk_get_index_node(index_node_number);
   memset(index_node, 0, sizeof(index_node_t));
-  // set type to file
   strcpy(index_node->type, type);
-  printk(KERN_INFO "Created directory entry at index node %d\n", index_node_number);
-
- 
   strcpy(entry.filename, filename);
   entry.index_node_number = index_node_number;
+  printk(KERN_INFO "Created file %s, type %s, at index node %d\n", entry.filename, type, entry.index_node_number);
 
-  // update parent directory to include file directory
-  updated_parent = ramdisk_update_parent_directory_file(parent_directory_index_node, &entry);
-  if (updated_parent != 0)
+  // 5. find empty entry in parent directory and add new entry
+  if ((parent_directory_index_node->size + sizeof(dir_entry_t)) > MAX_FILE_SIZE) {
+    return -1; 
+  }
+  ramdisk_file_position_init(&file_position, parent_directory_index_node, 0, 1);
+  // scan through the directory file until an empty entry is found or the end is reached.
+  while (file_position.file_position < parent_directory_index_node->size) {
+    empty_entry = (dir_entry_t *)ramdisk_get_memory_address(&file_position);
+    if (NULL == empty_entry) {
+      break;
+    }
+    ramdisk_file_position_add(&file_position, sizeof(dir_entry_t));
+    
+    // If an empty child directory entry is found, use it for the new entry.
+    if (0 == strcmp(empty_entry->filename, "")) {
+      memcpy(empty_entry, &entry, sizeof(dir_entry_t));
+      parent_directory_index_node->dir_entry_count++;
+      return 0;
+    }
+  }
+  // now that we have memory address add it to the end of the parent directory file
+  ramdisk_file_position_init(&file_position, parent_directory_index_node, parent_directory_index_node->size, 0);
+  dst = ramdisk_get_memory_address(&file_position);
+  if (NULL == dst) {
+    return -1; 
+  }
+  memcpy(dst, &entry, sizeof(dir_entry_t));
+  parent_directory_index_node->size = parent_directory_index_node->size + sizeof(dir_entry_t);
+  parent_directory_index_node->dir_entry_count++;
+
+  printk(KERN_INFO "Finished creating file %s\n", pathname);
+  return 0;
+}
+
+// absolute file path from root of directory tree
+int ramdisk_mkdir(char *pathname)
+{
+  return ramdisk_create(pathname, "dir");
+}
+
+/* This function open an existing file corresponding to pathname. */
+int ramdisk_open(char *pathname, int *index_node_number)
+{
+  const char *filename = NULL;
+  index_node_t *parent_directory_index_node = NULL;
+  index_node_t *index_node = NULL;
+  dir_entry_t *entry = NULL;
+  superblock_t *superblock = NULL;
+
+  /* If open the root directory, then return 0
+     as the root directory's index node number. */
+  if ((0 == strcmp("", pathname))
+    || (0 == strcmp("/", pathname)))
+  {
+    *index_node_number = 0;
+    /* Increase the index node's open counter. */
+    superblock = (superblock_t *)ramdisk_memory;
+    superblock->first_block.open_counter++;
+    return 0;
+  }
+  /* If the parent directory for the given pathname does not exist,
+     this function will return -1 to indicate fail. */
+  parent_directory_index_node = ramdisk_get_directory_index_node(pathname);
+  if (NULL == parent_directory_index_node)
   {
     return -1;
   }
-  printk(KERN_INFO "ramdisk: Finished creating file %s\n", pathname);
+  filename = strrchr(pathname, '/');
+  entry = ramdisk_get_dir_entry(parent_directory_index_node, filename, NULL);
+  if (NULL == entry)
+  {
+    return -1;
+  }
+  /* The index node which is not the root directory's index node
+     will has a index node number range from 1 to 1024. */
+  *index_node_number = entry->index_node_number;
+
+  /* Increase the index node's open counter. */
+  index_node = ramdisk_get_index_node(entry->index_node_number);
+  index_node->open_counter++;
+
   return 0;
 }
+
 
 /* This function remove the file from the ramdisk with absolute
    pathname from the filesystem, freeing its memory in the ramdisk. */
@@ -198,50 +284,6 @@ int ramdisk_unlink(char *pathname)
   {
     ramdisk_free_index_node_memory(parent_directory_index_node);
   }
-
-  return 0;
-}
-
-/* This function open an existing file corresponding to pathname. */
-int ramdisk_open(char *pathname, int *index_node_number)
-{
-  const char *filename = NULL;
-  index_node_t *parent_directory_index_node = NULL;
-  index_node_t *index_node = NULL;
-  dir_entry_t *entry = NULL;
-  superblock_t *superblock = NULL;
-
-  /* If open the root directory, then return 0
-     as the root directory's index node number. */
-  if ((0 == strcmp("", pathname))
-    || (0 == strcmp("/", pathname)))
-  {
-    *index_node_number = 0;
-    /* Increase the index node's open counter. */
-    superblock = (superblock_t *)ramdisk_memory;
-    superblock->first_block.open_counter++;
-    return 0;
-  }
-  /* If the parent directory for the given pathname does not exist,
-     this function will return -1 to indicate fail. */
-  parent_directory_index_node = ramdisk_get_directory_index_node(pathname);
-  if (NULL == parent_directory_index_node)
-  {
-    return -1;
-  }
-  filename = strrchr(pathname, '/');
-  entry = ramdisk_get_dir_entry(parent_directory_index_node, filename, NULL);
-  if (NULL == entry)
-  {
-    return -1;
-  }
-  /* The index node which is not the root directory's index node
-     will has a index node number range from 1 to 1024. */
-  *index_node_number = entry->index_node_number;
-
-  /* Increase the index node's open counter. */
-  index_node = ramdisk_get_index_node(entry->index_node_number);
-  index_node->open_counter++;
 
   return 0;
 }
@@ -403,12 +445,6 @@ int ramdisk_lseek(int index_node_number, int seek_offset, int *seek_result_offse
   return 0;
 }
 
-// absolute file path from root of directory tree
-int ramdisk_mkdir(char *pathname)
-{
-  return ramdisk_create(pathname, "dir");
-}
-
 /* This function read one entry from a directory file identified by
    index node number index_node_number, and store the result
    in memory at the specified value of address. */
@@ -537,36 +573,6 @@ index_node_t *ramdisk_get_index_node(int index_node_number)
   return index_node_array + (index_node_number - 1);
 }
 
-/* This function find and return one unused index node,
-   if there has no unused index node, then return -1. */
-int ramdisk_get_unused_index_node()
-{
-  int loop = 0;
-  index_node_t *index_node_array = NULL;
-  superblock_t *superblock = NULL;
-
-  // first check superblock for unused inode
-  superblock = (superblock_t *)ramdisk_memory;
-  if (superblock->num_free_index_nodes <= 0)
-  {
-    return -1;
-  }
-  index_node_array = ramdisk_get_index_node(1);
-  for (loop = 0; loop < MAX_INDEX_NODES_COUNT; loop++)
-  {
-    /* If the index node's type is an empty string,
-       then it indicate that this index node is an unused index node. */
-    if (0 == strcmp(index_node_array[loop].type, ""))
-    {
-      superblock->num_free_index_nodes--;
-      return (loop + 1);
-    }
-  }
-
-  /* if there has no unused index node, then return -1. */
-  return -1;
-}
-
 // find free block and allocate it in bitmap
 int search_bitmap() {
   int blockPointer = 0;
@@ -639,51 +645,6 @@ void ramdisk_block_free(int block_pointer)
     block_bitmap[index] = block_bitmap[index] | mask;
     superblock->num_free_blocks++;
   }
-}
-
-// add entry to parent directory index node
-int ramdisk_update_parent_directory_file(index_node_t *index_node, dir_entry_t *entry) {
-  char *dst = NULL;
-  file_position_t file_position;
-  dir_entry_t *empty_entry = NULL;
-
-  // check size of parent index node
-  if ((index_node->size + sizeof(dir_entry_t)) > MAX_FILE_SIZE) {
-    return -1; // Parent directory file is full.
-  }
-
-  // Init the file position data structure.
-  ramdisk_file_position_init(&file_position, index_node, 0, 1);
-
-  // scan through the directory file until an empty entry is found or the end is reached.
-  while (file_position.file_position < index_node->size) {
-    empty_entry = (dir_entry_t *)ramdisk_get_memory_address(&file_position);
-    if (NULL == empty_entry) {
-      break;
-    }
-    ramdisk_file_position_add(&file_position, sizeof(dir_entry_t));
-    
-    // If an empty child directory entry is found, use it for the new entry.
-    if (0 == strcmp(empty_entry->filename, "")) {
-      memcpy(empty_entry, entry, sizeof(dir_entry_t));
-      index_node->dir_entry_count++;
-      return 0;
-    }
-  }
-
-  // now that we have memory address add it to the end of the parent directory file
-  ramdisk_file_position_init(&file_position, index_node, index_node->size, 0);
-  dst = ramdisk_get_memory_address(&file_position);
-  if (NULL == dst) {
-    return -1; // Unable to retrieve memory address.
-  }
-
-  // Append the directory entry to the end of the parent directory file.
-  memcpy(dst, entry, sizeof(dir_entry_t));
-  index_node->size = index_node->size + sizeof(dir_entry_t);
-  index_node->dir_entry_count++;
-
-  return 0;
 }
 
 // find directory index node
