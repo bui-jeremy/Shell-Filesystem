@@ -214,7 +214,7 @@ static int rd_creat(struct inode *inode, struct file *file,
 
   /* Call ramdisk kernel module's ramdisk_creat function
      to create a regular file. */
-  creat_param.return_value = ramdisk_creat(pathname);
+  creat_param.return_value = ramdisk_creat(pathname, "reg");
   copy_to_user((int *)arg, &creat_param.return_value, sizeof(int));
 
   /* Free the pathname. */
